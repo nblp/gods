@@ -1,12 +1,6 @@
 // This programm collects some system information, formats it nicely and sets
 // the X root windows name so it can be displayed in the dwm status bar.
 //
-// The strange characters in the output are used by dwm to colorize the output
-// ( to , needs the http://dwm.suckless.org/patches/statuscolors patch) and
-// as Icons or separators (e.g. "Ý"). If you don't use the status-18 font
-// (https://github.com/schachmat/status-18), you should probably exchange them
-// by something else ("CPU", "MEM", "|" for separators, …).
-//
 // For license information see the file LICENSE
 package main
 
@@ -23,30 +17,30 @@ import (
 )
 
 const (
-	bpsSign   = "á"
-	kibpsSign = "â"
-	mibpsSign = "ã"
+	bpsSign   = "bps"
+	kibpsSign = "kbps"
+	mibpsSign = "Mbps"
 
-	unpluggedSign = "è"
-	pluggedSign   = "é"
+	unpluggedSign = "[ ]"
+	pluggedSign   = "[X]"
 
-	cpuSign = "Ï"
-	memSign = "Þ"
+	cpuSign = "CPU"
+	memSign = "MEM"
 
-	netReceivedSign    = "Ð"
-	netTransmittedSign = "Ñ"
+	netReceivedSign    = "{}<"
+	netTransmittedSign = "{}>"
 
-	floatSeparator = "à"
-	dateSeparator  = "Ý"
-	fieldSeparator = "û"
+	floatSeparator = "."
+	dateSeparator  = " - "
+	fieldSeparator = "|"
 )
 
 var (
 	netDevs = map[string]struct{}{
-		"eth0:": {},
-		"eth1:": {},
-		"wlan0:": {},
-		"ppp0:": {},
+		"eth0:":   {},
+		"eth1:":   {},
+		"wlp3s0:": {},
+		"lo:":     {},
 	}
 	cores = runtime.NumCPU() // count of cores to scale cpu usage
 	rxOld = 0
@@ -56,7 +50,7 @@ var (
 // fixed builds a fixed width string with given pre- and fitting suffix
 func fixed(pre string, rate int) string {
 	if rate < 0 {
-		return pre + " ERR"
+		return pre + " ERR"
 	}
 
 	var decDigit = 0
@@ -64,12 +58,12 @@ func fixed(pre string, rate int) string {
 
 	switch {
 	case rate >= (1000 * 1024 * 1024): // > 999 MiB/s
-		return "" + pre + " ERR"
+		return pre + " ERR"
 	case rate >= (1000 * 1024): // display as MiB/s
 		decDigit = (rate / 1024 / 102) % 10
 		rate /= (1024 * 1024)
 		suf = mibpsSign
-		pre = "" + pre + ""
+		pre = pre
 	case rate >= 1000: // display as KiB/s
 		decDigit = (rate / 102) % 10
 		rate /= 1024
@@ -91,7 +85,7 @@ func fixed(pre string, rate int) string {
 func updateNetUse() string {
 	file, err := os.Open("/proc/net/dev")
 	if err != nil {
-		return netReceivedSign + " ERR " + netTransmittedSign + " ERR"
+		return netReceivedSign + " ERR " + netTransmittedSign + " ERR"
 	}
 	defer file.Close()
 
@@ -111,27 +105,17 @@ func updateNetUse() string {
 	return fmt.Sprintf("%s %s", fixed(netReceivedSign, rxNow-rxOld), fixed(netTransmittedSign, txNow-txOld))
 }
 
-// colored surrounds the percentage with color escapes if it is >= 70
-func colored(icon string, percentage int) string {
-	if percentage >= 100 {
-		return fmt.Sprintf("%s%3d", icon, percentage)
-	} else if percentage >= 70 {
-		return fmt.Sprintf("%s%3d", icon, percentage)
-	}
-	return fmt.Sprintf("%s%3d", icon, percentage)
-}
-
 // updatePower reads the current battery and power plug status
 func updatePower() string {
 	const powerSupply = "/sys/class/power_supply/"
 	var enFull, enNow, enPerc int = 0, 0, 0
 	var plugged, err = ioutil.ReadFile(powerSupply + "AC/online")
 	if err != nil {
-		return "ÏERR"
+		return "ERR"
 	}
 	batts, err := ioutil.ReadDir(powerSupply)
 	if err != nil {
-		return "ÏERR"
+		return "ERR"
 	}
 
 	readval := func(name, field string) int {
@@ -162,7 +146,7 @@ func updatePower() string {
 	}
 
 	if enFull == 0 { // Battery found but no readable full file.
-		return "ÏERR"
+		return "ERR"
 	}
 
 	enPerc = enNow * 100 / enFull
@@ -172,32 +156,32 @@ func updatePower() string {
 	}
 
 	if enPerc <= 5 {
-		return fmt.Sprintf("%s%3d", icon, enPerc)
+		return fmt.Sprintf("%3d%s", enPerc, icon)
 	} else if enPerc <= 10 {
-		return fmt.Sprintf("%s%3d", icon, enPerc)
+		return fmt.Sprintf("%3d%s", enPerc, icon)
 	}
-	return fmt.Sprintf("%s%3d", icon, enPerc)
+	return fmt.Sprintf("%3d%s", enPerc, icon)
 }
 
 // updateCPUUse reads the last minute sysload and scales it to the core count
 func updateCPUUse() string {
-	var load float32
+	var load float64
 	var loadavg, err = ioutil.ReadFile("/proc/loadavg")
 	if err != nil {
-		return cpuSign + "ERR"
+		return cpuSign + "ERR"
 	}
 	_, err = fmt.Sscanf(string(loadavg), "%f", &load)
 	if err != nil {
-		return cpuSign + "ERR"
+		return cpuSign + "ERR"
 	}
-	return colored(cpuSign, int(load*100.0/float32(cores)))
+	return fmt.Sprintf("%.2f %s", load, cpuSign)
 }
 
 // updateMemUse reads the memory used by applications and scales to [0, 100]
 func updateMemUse() string {
 	var file, err = os.Open("/proc/meminfo")
 	if err != nil {
-		return memSign + "ERR"
+		return memSign + "ERR"
 	}
 	defer file.Close()
 
@@ -206,7 +190,7 @@ func updateMemUse() string {
 	for info := bufio.NewScanner(file); done != 15 && info.Scan(); {
 		var prop, val = "", 0
 		if _, err = fmt.Sscanf(info.Text(), "%s %d", &prop, &val); err != nil {
-			return memSign + "ERR"
+			return memSign + "ERR"
 		}
 		switch prop {
 		case "MemTotal:":
@@ -224,7 +208,7 @@ func updateMemUse() string {
 			done |= 8
 		}
 	}
-	return colored(memSign, used*100/total)
+	return fmt.Sprintf("%3d/%3d%s", used, total, memSign)
 }
 
 // main updates the dwm statusbar every second
@@ -235,8 +219,8 @@ func main() {
 			updateNetUse(),
 			updateCPUUse(),
 			updateMemUse(),
+			time.Now().Local().Format("15:04:05" + dateSeparator + " Monday 02 November"),
 			updatePower(),
-			time.Now().Local().Format("Mon 02 " + dateSeparator + " 15:04:05"),
 		}
 		exec.Command("xsetroot", "-name", strings.Join(status, fieldSeparator)).Run()
 
