@@ -21,14 +21,19 @@ const (
 	kibpsSign = "kbps"
 	mibpsSign = "Mbps"
 
+	netReceivedSign    = "{}<"
+	netTransmittedSign = "{}>"
+
 	unpluggedSign = "[ ]"
 	pluggedSign   = "[X]"
 
 	cpuSign = "CPU"
-	memSign = "MEM"
 
-	netReceivedSign    = "{}<"
-	netTransmittedSign = "{}>"
+	KBSign = "KB"
+	MBSign = "MB"
+	GBSign = "GB"
+
+	memSign = "MEM"
 
 	floatSeparator = "."
 	dateSeparator  = " - "
@@ -177,6 +182,22 @@ func updateCPUUse() string {
 	return fmt.Sprintf("%.2f %s", load, cpuSign)
 }
 
+// fixedMem take a value val in kiloByte and return its convertion in KB, MB
+// or GB  as well as the sign chosen to represent the unit.
+func fixedMem(val float64) (float64, string) {
+	MB_limit := 1024.0
+	GB_limit := 1024.0 * 1024.0
+
+	switch {
+	case val > GB_limit:
+		return val / GB_limit, GBSign
+	case val > MB_limit:
+		return val / MB_limit, MBSign
+	default:
+		return val, KBSign
+	}
+}
+
 // updateMemUse reads the memory used by applications and scales to [0, 100]
 func updateMemUse() string {
 	var file, err = os.Open("/proc/meminfo")
@@ -186,10 +207,10 @@ func updateMemUse() string {
 	defer file.Close()
 
 	// done must equal the flag combination (0001 | 0010 | 0100 | 1000) = 15
-	var total, used, done = 0, 0, 0
+	var total, used, done = 0.0, 0.0, 0
 	for info := bufio.NewScanner(file); done != 15 && info.Scan(); {
-		var prop, val = "", 0
-		if _, err = fmt.Sscanf(info.Text(), "%s %d", &prop, &val); err != nil {
+		var prop, val = "", 0.0
+		if _, err = fmt.Sscanf(info.Text(), "%s %f", &prop, &val); err != nil {
 			return memSign + "ERR"
 		}
 		switch prop {
@@ -208,7 +229,9 @@ func updateMemUse() string {
 			done |= 8
 		}
 	}
-	return fmt.Sprintf("%3d/%3d%s", used, total, memSign)
+	u, uFormat := fixedMem(used)
+	t, tFormat := fixedMem(total)
+	return fmt.Sprintf("%.2f%s/%.2f%s %s", u, uFormat, t, tFormat, memSign)
 }
 
 // main updates the dwm statusbar every second
