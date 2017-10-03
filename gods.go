@@ -41,6 +41,9 @@ const (
 	floatSeparator = "."
 	dateSeparator  = " "
 	fieldSeparator = "|"
+
+	warningSign = string('\u26A0')
+	alertSign   = string('\u2620')
 )
 
 var (
@@ -78,7 +81,7 @@ func fixed(pre string, rate int) string {
 
 	var formated = ""
 	if rate >= 100 {
-		formated = fmt.Sprintf("%3d", rate)
+		formated = fmt.Sprintf(" %3d", rate)
 	} else if rate >= 10 {
 		formated = fmt.Sprintf("%2d.%1d", rate, decDigit)
 	} else {
@@ -120,6 +123,26 @@ func updateNetUse() string {
 
 	defer func() { rxOld, txOld = rxNow, txNow }()
 	return fmt.Sprintf("%s %s %s", devName, fixed(netReceivedSign, rxNow-rxOld), fixed(netTransmittedSign, txNow-txOld))
+}
+
+// statusPower outputs the status sign for the battery
+func statusPower(powLvl int) string {
+	var sec int = time.Now().Local().Second()
+	if powLvl < 10 {
+		if sec%2 != 0 {
+			return alertSign
+		} else {
+			return " "
+		}
+	} else if powLvl < 20 {
+		if sec%4 != 0 {
+			return warningSign
+		} else {
+			return " "
+		}
+	} else {
+		return ""
+	}
 }
 
 // updatePower reads the current battery and power plug status
@@ -168,16 +191,13 @@ func updatePower() string {
 
 	enPerc = enNow * 100 / enFull
 	var icon = unpluggedSign
+	var statusSign = ""
 	if string(plugged) == "1\n" {
 		icon = pluggedSign
+	} else {
+		statusSign = statusPower(enPerc)
 	}
-
-	if enPerc <= 5 {
-		return fmt.Sprintf("%3d%s", enPerc, icon)
-	} else if enPerc <= 10 {
-		return fmt.Sprintf("%3d%s", enPerc, icon)
-	}
-	return fmt.Sprintf("%3d%s", enPerc, icon)
+	return fmt.Sprintf("%3d%s%s", enPerc, icon, statusSign)
 }
 
 // updateCPUUse reads the last minute sysload and scales it to the core count
