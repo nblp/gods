@@ -2,6 +2,9 @@
 // the X root windows name so it can be displayed in the dwm status bar.
 //
 // For license information see the file LICENSE
+//  TODO fix length of net traffic
+//  TODO add name + type of network to wich i connect
+// TODO change symbols to unicode relevant symbols
 package main
 
 import (
@@ -17,35 +20,33 @@ import (
 )
 
 const (
-	bpsSign   = "bps"
-	kibpsSign = "kbps"
+	bpsSign   = " bps"
+	kibpsSign = "Kbps"
 	mibpsSign = "Mbps"
 
-	netReceivedSign    = "{}<"
-	netTransmittedSign = "{}>"
+	netReceivedSign    = string('\u21E9') // "{}<"
+	netTransmittedSign = string('\u21E7') // "{}>"
 
 	unpluggedSign = "[ ]"
-	pluggedSign   = "[X]"
+	pluggedSign   = "[" + string('\u26A1') + "]"
 
-	cpuSign = "CPU"
+	cpuSign = string('\u27A4') + string('\u25A3') // "CPU"
 
 	KBSign = "KB"
 	MBSign = "MB"
 	GBSign = "GB"
 
-	memSign = "MEM"
+	memSign = string('\u27A4') + string('\u2338') //  "MEM"
 
 	floatSeparator = "."
-	dateSeparator  = " - "
+	dateSeparator  = " "
 	fieldSeparator = "|"
 )
 
 var (
 	netDevs = map[string]struct{}{
-		"eth0:":   {},
-		"eth1:":   {},
-		"wlp3s0:": {},
-		"lo:":     {},
+		"enp0s25:": {},
+		"wlp3s0:":  {},
 	}
 	cores = runtime.NumCPU() // count of cores to scale cpu usage
 	rxOld = 0
@@ -81,7 +82,7 @@ func fixed(pre string, rate int) string {
 	} else if rate >= 10 {
 		formated = fmt.Sprintf("%2d.%1d", rate, decDigit)
 	} else {
-		formated = fmt.Sprintf(" %1d.%1d", rate, decDigit)
+		formated = fmt.Sprintf("%1d.%2d", rate, decDigit)
 	}
 	return pre + strings.Replace(formated, ".", floatSeparator, 1) + suf
 }
@@ -95,6 +96,7 @@ func updateNetUse() string {
 	defer file.Close()
 
 	var void = 0 // target for unused values
+	var devName string
 	var dev, rx, tx, rxNow, txNow = "", 0, 0, 0, 0
 	var scanner = bufio.NewScanner(file)
 	for scanner.Scan() {
@@ -103,11 +105,21 @@ func updateNetUse() string {
 		if _, ok := netDevs[dev]; ok {
 			rxNow += rx
 			txNow += tx
+			if rx > 0 || tx > 0 {
+				switch dev {
+				case "wlp3s0:":
+					devName = "(W)"
+				case "enp0s25:":
+					devName = "(E)"
+				default:
+					devName = "(?)"
+				}
+			}
 		}
 	}
 
 	defer func() { rxOld, txOld = rxNow, txNow }()
-	return fmt.Sprintf("%s %s", fixed(netReceivedSign, rxNow-rxOld), fixed(netTransmittedSign, txNow-txOld))
+	return fmt.Sprintf("%s %s %s", devName, fixed(netReceivedSign, rxNow-rxOld), fixed(netTransmittedSign, txNow-txOld))
 }
 
 // updatePower reads the current battery and power plug status
@@ -242,7 +254,7 @@ func main() {
 			updateNetUse(),
 			updateCPUUse(),
 			updateMemUse(),
-			time.Now().Local().Format("15:04:05" + dateSeparator + " Monday 02 November"),
+			time.Now().Local().Format("15:04:05" + dateSeparator + "Mon 02 Jan 2006"),
 			updatePower(),
 		}
 		exec.Command("xsetroot", "-name", strings.Join(status, fieldSeparator)).Run()
