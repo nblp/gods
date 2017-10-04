@@ -2,9 +2,7 @@
 // the X root windows name so it can be displayed in the dwm status bar.
 //
 // For license information see the file LICENSE
-//  TODO fix length of net traffic
 //  TODO add name + type of network to wich i connect
-// TODO change symbols to unicode relevant symbols
 package main
 
 import (
@@ -26,6 +24,7 @@ const (
 
 	netReceivedSign    = string('\u21E9') // "{}<"
 	netTransmittedSign = string('\u21E7') // "{}>"
+	netDownUpSign      = string('\u21F5')
 
 	unpluggedSign = "[ ]"
 	pluggedSign   = "[" + string('\u26A1') + "]"
@@ -111,18 +110,19 @@ func updateNetUse() string {
 			if rx > 0 || tx > 0 {
 				switch dev {
 				case "wlp3s0:":
-					devName = "(W)"
+					devName = "[W]"
 				case "enp0s25:":
-					devName = "(E)"
+					devName = "[E]"
 				default:
-					devName = "(?)"
+					devName = "[?]"
 				}
 			}
 		}
 	}
 
 	defer func() { rxOld, txOld = rxNow, txNow }()
-	return fmt.Sprintf("%s %s %s", devName, fixed(netReceivedSign, rxNow-rxOld), fixed(netTransmittedSign, txNow-txOld))
+	//return fmt.Sprintf("%s %s %s", devName, fixed(netReceivedSign, rxNow-rxOld), fixed(netTransmittedSign, txNow-txOld))
+	return fmt.Sprintf("%s%s%s%s", devName, fixed("", rxNow-rxOld), netDownUpSign, fixed("", txNow-txOld))
 }
 
 // statusPower outputs the status sign for the battery
@@ -191,13 +191,10 @@ func updatePower() string {
 
 	enPerc = enNow * 100 / enFull
 	var icon = unpluggedSign
-	var statusSign = ""
 	if string(plugged) == "1\n" {
 		icon = pluggedSign
-	} else {
-		statusSign = statusPower(enPerc)
 	}
-	return fmt.Sprintf("%3d%s%s", enPerc, icon, statusSign)
+	return fmt.Sprintf("%3d%s", enPerc, icon)
 }
 
 // updateCPUUse reads the last minute sysload and scales it to the core count
@@ -211,7 +208,7 @@ func updateCPUUse() string {
 	if err != nil {
 		return cpuSign + "ERR"
 	}
-	return fmt.Sprintf("%.2f %s", load, cpuSign)
+	return fmt.Sprintf("%.2f%s", load, cpuSign)
 }
 
 // fixedMem take a value val in kiloByte and return its convertion in KB, MB
@@ -263,7 +260,7 @@ func updateMemUse() string {
 	}
 	u, uFormat := fixedMem(used)
 	t, tFormat := fixedMem(total)
-	return fmt.Sprintf("%.2f%s/%.2f%s %s", u, uFormat, t, tFormat, memSign)
+	return fmt.Sprintf("%.2f%s/%.2f%s%s", u, uFormat, t, tFormat, memSign)
 }
 
 // main updates the dwm statusbar every second
