@@ -18,34 +18,46 @@ import (
 )
 
 const (
-	bpsSign   = " bps"
-	kibpsSign = "Kbps"
-	mibpsSign = "Mbps"
+	bpsSign   = " Bps"
+	kibpsSign = "KBps"
+	mibpsSign = "MBps"
 
-	netReceivedSign    = string('\u21E9') // "{}<"
-	netTransmittedSign = string('\u21E7') // "{}>"
-	netDownUpSign      = string('\u21F5')
+	netLogoSign   = string('\u25CD')
+	netDownUpSign = string('\u21F5')
+	netWifiSign   = "[W]"
+	netEthSign    = "[E]"
+	netNoSign     = "[?]"
 
+	batLogoSign   = string('\u26A1')
 	unpluggedSign = "[ ]"
 	pluggedSign   = "[" + string('\u26A1') + "]"
 
-	cpuSign = string('\u27A4') + string('\u25A3') // "CPU"
+	cpuLogoSign = string('\u25A3')
+	cpuSign     = string('\u27A4') + string('\u25A3')
 
 	KBSign = "KB"
 	MBSign = "MB"
 	GBSign = "GB"
 
-	memSign = string('\u27A4') + string('\u2338') //  "MEM"
+	memLogoSign = string('\u2338')
+	memSign     = string('\u27A4') + string('\u2338')
 
 	floatSeparator = "."
 	dateSeparator  = " "
 	fieldSeparator = "|"
 
-	warningSign = string('\u26A0')
 	alertSign   = string('\u2620')
+	warningSign = string('\u26A0')
+	noneSign    = string('\u2756')
 )
 
 var (
+	alarmStatus = map[string]string{
+		netLogoSign: noneSign,
+		batLogoSign: noneSign,
+		cpuLogoSign: noneSign,
+		memLogoSign: noneSign,
+	}
 	netDevs = map[string]struct{}{
 		"enp0s25:": {},
 		"wlp3s0:":  {},
@@ -55,27 +67,67 @@ var (
 	txOld = 0
 )
 
+// upgradeAlarmStatus modify the status of a service according to the current
+// level and the one passed in argument. Keep the more severe level
+func upgradeAlarmStatus(service string, level string) {
+	levelNow, ok := alarmStatus[service]
+	if ok {
+		switch levelNow {
+		case alertSign:
+			alarmStatus[service] = alertSign
+		case warningSign:
+			if level == alertSign {
+				alarmStatus[service] = alertSign
+			}
+		default:
+			alarmStatus[service] = level
+		}
+	}
+}
+
+// updateAlarms read alarmStatus and generate a fancy alarms display.
+func updateAlarms() string {
+	var isOn bool = false
+	pre := noneSign
+	alert := alertSign + ":"
+	warn := warningSign + ":"
+	for key, val := range alarmStatus {
+		if val == alertSign {
+			isOn = true
+			alert += key
+		} else if val == warningSign {
+			isOn = true
+			warn += key
+		}
+	}
+	if isOn {
+		return pre + " " + alert + " " + warn
+	} else {
+		return pre
+	}
+}
+
 // fixed builds a fixed width string with given pre- and fitting suffix
-func fixed(pre string, rate int) string {
+func fixed(rate int) string {
 	if rate < 0 {
-		return pre + " ERR"
+		return " ERR"
 	}
 
 	var decDigit = 0
-	var suf = bpsSign // default: display as B/s
+	var unit = bpsSign // default: display as B/s
 
 	switch {
 	case rate >= (1000 * 1024 * 1024): // > 999 MiB/s
-		return pre + " ERR"
+		upgradeAlarmStatus(netLogoSign, warningSign)
+		return " ERR"
 	case rate >= (1000 * 1024): // display as MiB/s
-		decDigit = (rate / 1024 / 102) % 10
+		decDigit = (rate / 1024 / 1024) % 10
 		rate /= (1024 * 1024)
-		suf = mibpsSign
-		pre = pre
+		unit = mibpsSign
 	case rate >= 1000: // display as KiB/s
-		decDigit = (rate / 102) % 10
+		decDigit = (rate / 1024) % 10
 		rate /= 1024
-		suf = kibpsSign
+		unit = kibpsSign
 	}
 
 	var formated = ""
@@ -86,14 +138,14 @@ func fixed(pre string, rate int) string {
 	} else {
 		formated = fmt.Sprintf("%1d.%2d", rate, decDigit)
 	}
-	return pre + strings.Replace(formated, ".", floatSeparator, 1) + suf
+	return strings.Replace(formated, ".", floatSeparator, 1) + unit
 }
 
 // updateNetUse reads current transfer rates of certain network interfaces
 func updateNetUse() string {
 	file, err := os.Open("/proc/net/dev")
 	if err != nil {
-		return netReceivedSign + " ERR " + netTransmittedSign + " ERR"
+		return netDownUpSign + " ERR"
 	}
 	defer file.Close()
 
@@ -110,39 +162,19 @@ func updateNetUse() string {
 			if rx > 0 || tx > 0 {
 				switch dev {
 				case "wlp3s0:":
-					devName = "[W]"
+					devName = netWifiSign
 				case "enp0s25:":
-					devName = "[E]"
+					devName = netEthSign
 				default:
-					devName = "[?]"
+					upgradeAlarmStatus(netLogoSign, warningSign)
+					devName = netNoSign
 				}
 			}
 		}
 	}
 
 	defer func() { rxOld, txOld = rxNow, txNow }()
-	//return fmt.Sprintf("%s %s %s", devName, fixed(netReceivedSign, rxNow-rxOld), fixed(netTransmittedSign, txNow-txOld))
-	return fmt.Sprintf("%s%s%s%s", devName, fixed("", rxNow-rxOld), netDownUpSign, fixed("", txNow-txOld))
-}
-
-// statusPower outputs the status sign for the battery
-func statusPower(powLvl int) string {
-	var sec int = time.Now().Local().Second()
-	if powLvl < 10 {
-		if sec%2 != 0 {
-			return alertSign
-		} else {
-			return " "
-		}
-	} else if powLvl < 20 {
-		if sec%4 != 0 {
-			return warningSign
-		} else {
-			return " "
-		}
-	} else {
-		return ""
-	}
+	return fmt.Sprintf("%s%s%s%s", devName, fixed(rxNow-rxOld), netDownUpSign, fixed(txNow-txOld))
 }
 
 // updatePower reads the current battery and power plug status
@@ -193,6 +225,12 @@ func updatePower() string {
 	var icon = unpluggedSign
 	if string(plugged) == "1\n" {
 		icon = pluggedSign
+	} else {
+		if enPerc < 10 {
+			upgradeAlarmStatus(batLogoSign, alertSign)
+		} else if enPerc < 15 {
+			upgradeAlarmStatus(batLogoSign, warningSign)
+		}
 	}
 	return fmt.Sprintf("%3d%s", enPerc, icon)
 }
@@ -207,6 +245,11 @@ func updateCPUUse() string {
 	_, err = fmt.Sscanf(string(loadavg), "%f", &load)
 	if err != nil {
 		return cpuSign + "ERR"
+	}
+	if load > 0.75*float64(cores) {
+		upgradeAlarmStatus(cpuLogoSign, warningSign)
+	} else if load > 0.9*float64(cores) {
+		upgradeAlarmStatus(cpuLogoSign, alertSign)
 	}
 	return fmt.Sprintf("%.2f%s", load, cpuSign)
 }
@@ -258,6 +301,11 @@ func updateMemUse() string {
 			done |= 8
 		}
 	}
+	if float64(used) > 0.75*float64(total) {
+		upgradeAlarmStatus(memLogoSign, warningSign)
+	} else if float64(used) > 0.9*float64(total) {
+		upgradeAlarmStatus(memLogoSign, alertSign)
+	}
 	u, uFormat := fixedMem(used)
 	t, tFormat := fixedMem(total)
 	return fmt.Sprintf("%.2f%s/%.2f%s%s", u, uFormat, t, tFormat, memSign)
@@ -268,6 +316,7 @@ func main() {
 	for {
 		var status = []string{
 			"",
+			updateAlarms(),
 			updateNetUse(),
 			updateCPUUse(),
 			updateMemUse(),
