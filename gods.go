@@ -24,9 +24,9 @@ const (
 
 	netLogoSign   = string('\u25CD')
 	netDownUpSign = string('\u21F5')
-	netWifiSign   = "[W]"
-	netEthSign    = "[E]"
-	netNoSign     = "[?]"
+	netWifiSign   = "W"
+	netEthSign    = "E"
+	netNoSign     = string('\u2753')
 
 	batLogoSign   = string('\u26A1')
 	unpluggedSign = "[ ]"
