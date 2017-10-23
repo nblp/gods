@@ -2,7 +2,6 @@
 // the X root windows name so it can be displayed in the dwm status bar.
 //
 // For license information see the file LICENSE
-//  TODO add name + type of network to wich i connect
 package main
 
 import (
@@ -27,6 +26,8 @@ const (
 	netWifiSign   = "W"
 	netEthSign    = "E"
 	netNoSign     = string('\u2753')
+	netWifiDev    = "wlp58s0"
+	netEthDev     = "enp0s31f6"
 
 	batLogoSign   = string('\u26A1')
 	unpluggedSign = "[ ]"
@@ -38,6 +39,7 @@ const (
 	KBSign = "KB"
 	MBSign = "MB"
 	GBSign = "GB"
+	TBSign = "TB"
 
 	memLogoSign = string('\u2338')
 	memSign     = string('\u27A4') + string('\u2338')
@@ -59,8 +61,8 @@ var (
 		memLogoSign: noneSign,
 	}
 	netDevs = map[string]struct{}{
-		"enp0s25:": {},
-		"wlp3s0:":  {},
+		netWifiDev + ":": {},
+		netEthDev + ":":  {},
 	}
 	cores = runtime.NumCPU() // count of cores to scale cpu usage
 	rxOld = 0
@@ -68,7 +70,8 @@ var (
 )
 
 // upgradeAlarmStatus modify the status of a service according to the current
-// level and the one passed in argument. Keep the more severe level
+// level and the one passed in argument. Keep the more severe level between
+// the current one and the one passed in argument.
 func upgradeAlarmStatus(service string, level string) {
 	levelNow, ok := alarmStatus[service]
 	if ok {
@@ -87,24 +90,26 @@ func upgradeAlarmStatus(service string, level string) {
 
 // updateAlarms read alarmStatus and generate a fancy alarms display.
 func updateAlarms() string {
-	var isOn bool = false
-	pre := noneSign
+	var isOnA, isOnW bool = false, false
+	status := noneSign
 	alert := alertSign + ":"
 	warn := warningSign + ":"
 	for key, val := range alarmStatus {
 		if val == alertSign {
-			isOn = true
+			isOnA = true
 			alert += key
 		} else if val == warningSign {
-			isOn = true
+			isOnW = true
 			warn += key
 		}
 	}
-	if isOn {
-		return pre + " " + alert + " " + warn
-	} else {
-		return pre
+	if isOnA {
+		status += alert
 	}
+	if isOnW {
+		status += warn
+	}
+	return status
 }
 
 // fixed builds a fixed width string with given pre- and fitting suffix
@@ -138,7 +143,7 @@ func fixed(rate int) string {
 	} else {
 		formated = fmt.Sprintf("%1d.%2d", rate, decDigit)
 	}
-	return strings.Replace(formated, ".", floatSeparator, 1) + unit
+	return formated + unit
 }
 
 // updateNetUse reads current transfer rates of certain network interfaces
@@ -161,9 +166,9 @@ func updateNetUse() string {
 			txNow += tx
 			if rx > 0 || tx > 0 {
 				switch dev {
-				case "wlp3s0:":
+				case netWifiDev + ":":
 					devName = netWifiSign
-				case "enp0s25:":
+				case netEthDev + ":":
 					devName = netEthSign
 				default:
 					upgradeAlarmStatus(netLogoSign, warningSign)
@@ -226,9 +231,9 @@ func updatePower() string {
 	if string(plugged) == "1\n" {
 		icon = pluggedSign
 	} else {
-		if enPerc < 10 {
+		if enPerc <= 10 {
 			upgradeAlarmStatus(batLogoSign, alertSign)
-		} else if enPerc < 15 {
+		} else if enPerc <= 15 {
 			upgradeAlarmStatus(batLogoSign, warningSign)
 		}
 	}
@@ -257,14 +262,23 @@ func updateCPUUse() string {
 // fixedMem take a value val in kiloByte and return its convertion in KB, MB
 // or GB  as well as the sign chosen to represent the unit.
 func fixedMem(val float64) (float64, string) {
-	MB_limit := 1024.0
-	GB_limit := 1024.0 * 1024.0
+	MB_coef := 1024.0
+	GB_coef := 1024.0 * 1024.0
+	TB_coef := 1024.0 * 1024.0 * 1024.0
+	KB_limit := 99.99
+	MB_limit := 99.99 * MB_coef
+	GB_limit := 99.99 * GB_coef
+	TB_limit := 99.99 * TB_coef
 
 	switch {
+	case val > TB_limit:
+		return val, TBSign
 	case val > GB_limit:
-		return val / GB_limit, GBSign
+		return val / TB_coef, TBSign
 	case val > MB_limit:
-		return val / MB_limit, MBSign
+		return val / GB_coef, GBSign
+	case val > KB_limit:
+		return val / MB_coef, MBSign
 	default:
 		return val, KBSign
 	}
@@ -308,21 +322,26 @@ func updateMemUse() string {
 	}
 	u, uFormat := fixedMem(used)
 	t, tFormat := fixedMem(total)
-	return fmt.Sprintf("%.2f%s/%.2f%s%s", u, uFormat, t, tFormat, memSign)
+	return fmt.Sprintf("%05.2f%s/%05.2f%s%s", u, uFormat, t, tFormat, memSign)
 }
 
 // main updates the dwm statusbar every second
 func main() {
 	for {
+		// reset alarm sytem
+		for service, _ := range alarmStatus {
+			alarmStatus[service] = noneSign
+		}
 		var status = []string{
 			"",
-			updateAlarms(),
+			"", // after all updates, alarms will be here
 			updateNetUse(),
 			updateCPUUse(),
 			updateMemUse(),
 			time.Now().Local().Format("15:04:05" + dateSeparator + "Mon 02 Jan 2006"),
 			updatePower(),
 		}
+		status[1] = updateAlarms()
 		exec.Command("xsetroot", "-name", strings.Join(status, fieldSeparator)).Run()
 
 		// sleep until beginning of next second
